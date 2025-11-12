@@ -1,0 +1,44 @@
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>HOD Dashboard</title>
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<style>body{font-family:Inter,Arial;background:#f6f8fb;padding:20px} .top{display:flex;justify-content:space-between;align-items:center;max-width:1100px;margin:6px auto} .card{background:white;padding:12px;border-radius:10px;box-shadow:0 6px 18px rgba(2,6,23,0.06); max-width:1100px;margin:auto} table{width:100%;border-collapse:collapse} th,td{padding:10px;border-bottom:1px solid #eee;text-align:left} th{background:#fafafa} .action-form input{padding:8px;border-radius:6px;border:1px solid #e6e9ef} .btn{background:#0b6efd;color:white;padding:8px 10px;border-radius:6px;border:0;cursor:pointer} .small-btn{background:#06b6d4;color:white;padding:6px 8px;border-radius:6px;border:0}</style>
+</head>
+<body>
+  <div class="top">
+    <h2 style="margin:0">HOD Dashboard — {{ email }}</h2>
+    <div><a href="/logout" style="color:#6b7280">Logout</a></div>
+  </div>
+
+  <div class="card" style="margin-top:10px;">
+    <h3 style="margin-top:0">Candidate Applications</h3>
+    <table>
+      <thead>
+        <tr><th>Name</th><th>Position</th><th>Phone</th><th>Resume</th><th>Remarks</th><th style="width:260px">Action</th></tr>
+      </thead>
+      <tbody>
+        {% for c in candidates %}
+        <tr>
+          <td>{{ c.name }}</td>
+          <td>{{ c.position }}</td>
+          <td>{{ c.phone }}</td>
+          <td>
+            {% if c.resume_filename %}
+              <a href="{{ url_for('static', filename='uploads/'~c.resume_filename) }}" target="_blank" class="small-btn">View Resume</a>
+            {% else %}No resume{% endif %}
+          </td>
+          <td style="max-width:240px;">{{ c.remarks }}</td>
+          <td>
+            <form class="action-form" method="POST" style="display:flex; gap:8px;">
+              <input type="hidden" name="candidate_name" value="{{ c.name }}">
+              <input type="text" name="remarks" placeholder="Add your remark (required)" required style="flex:1">
+              <button type="submit" class="btn">Save</button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</body>
+</html>
