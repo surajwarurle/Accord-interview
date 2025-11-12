@@ -20,6 +20,7 @@ import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 import io
+import re
 
 # ------------------ CONFIG ------------------
 app = Flask(__name__)
@@ -123,8 +124,19 @@ def submit_application():
     form = request.form
     name = form.get('name','').strip()
     candidate_email = form.get('email','').strip()
-    phone = form.get('phone','').strip()
+    phone_raw = form.get('phone','').strip()
     position = form.get('position','').strip()
+
+# --- phone: clean and validate (server-side) ---
+# remove all non-digits (handles pasted "+91 98-7654 3210", spaces, parentheses, etc.)
+    phone = re.sub(r'\D', '', phone_raw)
+
+# note: `errors` list should already be defined later; if not, define before using
+# validate phone presence & length
+    if not phone:
+     errors.append('Phone number is required.')
+    elif len(phone) != 10:
+     errors.append('Phone number must contain exactly 10 digits.')
 
     errors = []
     if not name: errors.append('Name is required.')
