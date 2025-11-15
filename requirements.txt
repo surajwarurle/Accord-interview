@@ -3,3 +3,4 @@ Flask-SQLAlchemy
 gunicorn
 python-dotenv
 email-validator
+openpyxl
