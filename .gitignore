@@ -1,18 +1,6 @@
-# Local SQLite DB files
-interview_app.db
-instance/*.db
-
-# Python caches
+venv/
 __pycache__/
 *.pyc
-
-# VS Code settings
-.vscode/
-
-# Uploads and runtime created files
-static/uploads/
-*.sqlite3
-
-# OS files
-.DS_Store
-Thumbs.db
+instance/
+uploads/
+.env

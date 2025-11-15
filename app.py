@@ -1,242 +1,167 @@
-# app.py
-# Interview app (Flask + SQLite) with:
-# - candidate form + resume upload
-# - HOD self-registration -> created inactive
-# - HR account created at startup (password from env)
-# - HR approves HODs (is_active=True) -> only then HOD can login
-# - Excel export and email notifications via Gmail
-#
-# Requirements:
-# pip install flask sqlalchemy openpyxl werkzeug
+# app.py - Clean, consolidated, email-enabled version
+import os
+import io
+import json
+import re
+import zipfile
+from datetime import datetime, timedelta
+from dotenv import load_dotenv
 
-from flask import Flask, render_template, request, redirect, url_for, session, flash, send_file, abort
+from flask import (
+    Flask, request, render_template, jsonify, send_from_directory, send_file,
+    redirect, url_for, session, flash
+)
 from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
-from datetime import datetime
 from openpyxl import Workbook
-import os
+
 import smtplib
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
-import io
-import re
+from email.message import EmailMessage
 
-# ------------------ CONFIG ------------------
+# ---------------- ENV & CONFIG ----------------
+load_dotenv()  # loads .env from project root
+
+SMTP_SERVER = os.getenv("SMTP_SERVER", "smtp.gmail.com")
+SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
+SMTP_USERNAME = os.getenv("SMTP_USERNAME")  # hr@accordhospitals.com
+SMTP_PASSWORD = os.getenv("SMTP_PASSWORD")  # App password
+SECRET_KEY = os.getenv("SECRET_KEY", "change_this_secret_in_prod")
+
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+UPLOAD_DIR = os.path.join(BASE_DIR, 'uploads')
+os.makedirs(UPLOAD_DIR, exist_ok=True)
+
+ALLOWED_EXT = {'.pdf', '.doc', '.docx'}
+MAX_FILE_SIZE = 5 * 1024 * 1024  # 5 MB
+
+# ---------------- FLASK SETUP ----------------
 app = Flask(__name__)
-app.secret_key = os.environ.get("FLASK_SECRET", "change_this_now")
-
-# DB (single sqlite file)
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///interview_app.db'
+app.secret_key = SECRET_KEY
+app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///' + os.path.join(BASE_DIR, 'interview.db')
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db = SQLAlchemy(app)
 
-# Uploads
-UPLOAD_FOLDER = os.path.join('static', 'uploads')
-os.makedirs(UPLOAD_FOLDER, exist_ok=True)
-ALLOWED_EXTENSIONS = {'pdf', 'doc', 'docx'}
-MAX_MB = 5
-app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
-app.config['MAX_CONTENT_LENGTH'] = MAX_MB * 1024 * 1024
-
-# Email config (use env vars)
-EMAIL_SENDER = os.environ.get('EMAIL_SENDER', 'warulesuraj12@gmail.com')
-HR_EMAIL = os.environ.get('HR_EMAIL', 'hr@accordhospitals.com')
-EMAIL_PASSWORD = os.environ.get('EMAIL_PASSWORD') # gmail app password
-HR_INIT_PASSWORD = os.environ.get('HR_INIT_PASSWORD', 'hr123') # initial HR password (change ASAP)
-
-# ------------------ MODELS ------------------
+# ---------------- MODELS ----------------
 class User(db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    email = db.Column(db.String(180), unique=True, nullable=False)
+    name = db.Column(db.String(200))
+    email = db.Column(db.String(200), unique=True, nullable=False)
     password_hash = db.Column(db.String(256), nullable=False)
-    role = db.Column(db.String(20), nullable=False) # 'HR' or 'HOD'
-    is_active = db.Column(db.Boolean, default=False) # HOD must be approved by HR to login
+    role = db.Column(db.String(32), nullable=False)  # HR, HOD, UnitHead
+    is_active = db.Column(db.Boolean, default=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
-    def check_password(self, password):
-        return check_password_hash(self.password_hash, password)
+    def set_password(self, pw):
+        self.password_hash = generate_password_hash(pw)
+
+    def check_password(self, pw):
+        return check_password_hash(self.password_hash, pw)
 
 class Application(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(200), nullable=False)
+    address = db.Column(db.String(500), nullable=False)
+    contact = db.Column(db.String(50), nullable=False)
     email = db.Column(db.String(200))
-    dob = db.Column(db.String(50))
-    phone = db.Column(db.String(20))
-    current_address = db.Column(db.String(500))
-    permanent_address = db.Column(db.String(500))
-    position = db.Column(db.String(200))
-    experience_summary = db.Column(db.String(200))
-    notice_period = db.Column(db.String(50))
-    last_salary = db.Column(db.String(50))
-    expected_salary = db.Column(db.String(50))
-    family_details_text = db.Column(db.Text)
-    experience_details_text = db.Column(db.Text)
-    resume_filename = db.Column(db.String(300))
-    hod_remarks = db.Column(db.Text)
-    hr_decision = db.Column(db.String(50))
-    date_submitted = db.Column(db.DateTime, default=datetime.utcnow)
+    academic_json = db.Column(db.Text)
+    professional_json = db.Column(db.Text)
+    family_json = db.Column(db.Text)
+    position_applied = db.Column(db.String(200))
+    area_of_interest = db.Column(db.String(200))
+    current_salary = db.Column(db.String(100))
+    expected_salary = db.Column(db.String(100))
+    notice_period = db.Column(db.String(100))
+    resume_filename = db.Column(db.String(400))
+    other_details = db.Column(db.Text)
+    reference_type = db.Column(db.String(50))
+    reference_name = db.Column(db.String(200))
+    status = db.Column(db.String(50), default='Applied')  # Applied, Assigned, Interviewed, OnHold, Rejected, Selected, Offered, Joined
+    assigned_hod_id = db.Column(db.Integer, db.ForeignKey('user.id'))
+    applied_at = db.Column(db.DateTime, default=datetime.utcnow)
 
-# ------------------ UTIL: Email ------------------
-def send_email(to_email, subject, html_body):
-    """Send an HTML email via Gmail using EMAIL_SENDER and EMAIL_PASSWORD env var."""
-    if not EMAIL_PASSWORD:
-        print("⚠️ EMAIL_PASSWORD not set. Email skipped.")
-        return False
-    try:
-        msg = MIMEMultipart()
-        msg['From'] = EMAIL_SENDER
-        msg['To'] = to_email
-        msg['Subject'] = subject
-        msg.attach(MIMEText(html_body, 'html'))
-        with smtplib.SMTP('smtp.gmail.com', 587) as server:
-            server.starttls()
-            server.login(EMAIL_SENDER, EMAIL_PASSWORD)
-            server.send_message(msg)
-        print(f"✅ Email sent to {to_email}")
-        return True
-    except Exception as e:
-        print("❌ Email error:", e)
-        return False
-
-# ------------------ HELPERS ------------------
+# ---------------- HELPERS ----------------
 def allowed_file(filename):
-    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+    ext = os.path.splitext(filename)[1].lower()
+    return ext in ALLOWED_EXT
 
-def create_tables_and_default_hr():
-    """Create DB tables and ensure default HR user exists (is_active=True)."""
+def login_required(role=None):
+    def wrapper(fn):
+        def wrapped(*args, **kwargs):
+            if 'user_id' not in session:
+                return redirect(url_for('login'))
+            if role and session.get('role') != role:
+                flash("Access denied", "danger")
+                return redirect(url_for('login'))
+            return fn(*args, **kwargs)
+        wrapped.__name__ = fn.__name__
+        return wrapped
+    return wrapper
+
+# ---------------- EMAIL SENDER (single correct implementation) ----------------
+# ---------------- EMAIL FUNCTION (GMAIL) ----------------
+def send_email(to, subject, html_body, cc=None):
+    try:
+        msg = EmailMessage()
+        msg["Subject"] = subject
+        msg["From"] = SMTP_USERNAME
+
+        # To
+        if isinstance(to, (list, tuple)):
+            msg["To"] = ", ".join(to)
+        else:
+            msg["To"] = to
+
+        # CC
+        if cc:
+            if isinstance(cc, (list, tuple)):
+                msg["Cc"] = ", ".join(cc)
+            else:
+                msg["Cc"] = cc
+
+        # HTML content
+        msg.set_content("This email contains HTML version.")
+        msg.add_alternative(html_body, subtype="html")
+
+        # Connect to Gmail
+        with smtplib.SMTP(SMTP_SERVER, SMTP_PORT, timeout=30) as server:
+            server.ehlo()
+            server.starttls()
+            server.ehlo()
+            server.login(SMTP_USERNAME, SMTP_PASSWORD)
+            server.send_message(msg)
+
+        print("EMAIL SENT →", to)
+        return True
+
+    except Exception as e:
+        print("EMAIL ERROR:", e)
+        return False
+
+
+# ---------------- HTML TEMPLATE WRAPPER ----------------
+def render_and_send(template_name, to_email, subject, cc=None, **context):
+    html = render_template(f"email_templates/{template_name}", **context)
+    return send_email(to_email, subject, html, cc=cc)
+
+
+# ---------------- STARTUP ----------------
+@app.before_first_request
+def create_tables():
     db.create_all()
-    hr = User.query.filter_by(role='HR').first()
-    if hr is None:
-        hashed = generate_password_hash(HR_INIT_PASSWORD)
-        hr = User(email=HR_EMAIL, password_hash=hashed, role='HR', is_active=True)
+    # create default HR if missing
+    if not User.query.filter_by(email='hr@accordhospitals.com').first():
+        hr = User(name='HR Admin', email='hr@accordhospitals.com', role='HR', is_active=True)
+        hr.set_password('ChangeMe123!')  # change this in production
         db.session.add(hr)
         db.session.commit()
-        print(f"Created default HR user: {HR_EMAIL} (password from env or 'hr123')")
 
-# ------------------ ROUTES ------------------
+# ---------------- ROUTES ----------------
 @app.route('/')
-def candidate_form():
-    return render_template('candidate_form.html')
+def home():
+    return render_template('home.html')
 
-@app.route('/submit', methods=['POST'])
-def submit_application():
-    form = request.form
-    name = form.get('name','').strip()
-    candidate_email = form.get('email','').strip()
-    phone_raw = form.get('phone','').strip()
-    position = form.get('position','').strip()
-
-# --- phone: clean and validate (server-side) ---
-# remove all non-digits (handles pasted "+91 98-7654 3210", spaces, parentheses, etc.)
-    phone = re.sub(r'\D', '', phone_raw)
-
-# note: `errors` list should already be defined later; if not, define before using
-# validate phone presence & length
-    if not phone:
-     errors.append('Phone number is required.')
-    elif len(phone) != 10:
-     errors.append('Phone number must contain exactly 10 digits.')
-
-    errors = []
-    if not name: errors.append('Name is required.')
-    if not candidate_email: errors.append('Email is required.')
-    if not phone: errors.append('Phone is required.')
-    if not position: errors.append('Position is required.')
-    if phone and (not phone.isdigit() or len(phone) != 10): errors.append('Phone must be 10 digits.')
-
-    resume = request.files.get('resume')
-    if not resume or resume.filename == '':
-        errors.append('Resume is required.')
-    else:
-        if not allowed_file(resume.filename):
-            errors.append('Resume must be PDF, DOC or DOCX.')
-
-    if errors:
-        flash(' ; '.join(errors), 'error')
-        return render_template('candidate_form.html', form_data=form, errors=errors)
-
-    # optional fields
-    dob = form.get('dob','').strip()
-    current_address = form.get('current_address','').strip()
-    permanent_address = form.get('permanent_address','').strip()
-    experience_summary = form.get('experience','').strip()
-    notice_period = form.get('notice_period','').strip()
-    last_salary = form.get('last_salary','').strip()
-    expected_salary = form.get('expected_salary','').strip()
-
-    # family details
-    fam_lines = []
-    for i in range(1,4):
-        n = form.get(f'family_name_{i}','').strip()
-        rel = form.get(f'relationship_{i}','').strip()
-        occ = form.get(f'occupation_{i}','').strip()
-        other = form.get(f'other_{i}','').strip()
-        if n or rel or occ or other:
-            fam_lines.append(f"{i}. {n} | {rel} | {occ} | other: {other}")
-    fam_text = "\n".join(fam_lines)
-
-    # experience details
-    exp_lines = []
-    for i in range(1,4):
-        org = form.get(f'org_{i}','').strip()
-        role = form.get(f'role_{i}','').strip()
-        tenure = form.get(f'tenure_{i}','').strip()
-        reason = form.get(f'reason_{i}','').strip()
-        if org or role or tenure or reason:
-            exp_lines.append(f"{i}. {org} | {role} | {tenure} | reason: {reason}")
-    exp_text = "\n".join(exp_lines)
-
-    # save resume
-    filename = secure_filename(resume.filename)
-    prefix = datetime.utcnow().strftime("%Y%m%d%H%M%S")
-    save_name = f"{prefix}_{filename}"
-    save_path = os.path.join(app.config['UPLOAD_FOLDER'], save_name)
-    resume.save(save_path)
-
-    app_row = Application(
-        name=name, email=candidate_email, dob=dob, phone=phone,
-        current_address=current_address, permanent_address=permanent_address,
-        position=position, experience_summary=experience_summary,
-        notice_period=notice_period, last_salary=last_salary, expected_salary=expected_salary,
-        family_details_text=fam_text, experience_details_text=exp_text,
-        resume_filename=save_name, hr_decision="Pending"
-    )
-    db.session.add(app_row)
-    db.session.commit()
-
-    # notify HR of new application
-    hr_msg = f"<p>New application: <b>{name}</b> for <b>{position}</b>.</p><p>Login to HR dashboard to view resume and details.</p>"
-    send_email(HR_EMAIL, f"New application: {name}", hr_msg)
-
-    # ack candidate
-    if candidate_email:
-        body = f"<p>Dear {name},</p><p>Thank you for applying for <strong>{position}</strong>. We received your application on {app_row.date_submitted.strftime('%Y-%m-%d %H:%M')}.</p><p>Regards,<br>HR</p>"
-        send_email(candidate_email, "Application Received - Accord Hospitals", body)
-
-    return render_template('submitted.html', name=name)
-
-# ------------------ Authentication ------------------
-@app.route('/register', methods=['GET','POST'])
-def register():
-    # HOD self registration -> created inactive, HR must approve
-    if request.method == 'POST':
-        email = request.form.get('email','').strip().lower()
-        password = request.form.get('password','').strip()
-        if not email or not password:
-            return "Email and password required", 400
-        existing = User.query.filter_by(email=email).first()
-        if existing:
-            return "Account with this email already exists. Please login.", 400
-        hashed = generate_password_hash(password)
-        hod = User(email=email, password_hash=hashed, role='HOD', is_active=False)
-        db.session.add(hod)
-        db.session.commit()
-        # notify HR about new HOD registration
-        send_email(HR_EMAIL, "New HOD registration pending", f"<p>New HOD registered with email: {email}. Please review and approve in HR dashboard.</p>")
-        return "Registration received. Await HR approval. Please wait for confirmation."
-    return render_template('register.html')
-
+# --- Auth routes ---
 @app.route('/login', methods=['GET','POST'])
 def login():
     if request.method == 'POST':
@@ -244,168 +169,465 @@ def login():
         password = request.form.get('password','').strip()
         user = User.query.filter_by(email=email).first()
         if not user or not user.check_password(password):
-            return render_template('login.html', error="Invalid credentials.")
-        # role check and activation
+            flash("Invalid credentials", "danger")
+            return render_template('login.html')
         if user.role == 'HOD' and not user.is_active:
-            return render_template('login.html', error="Your account is awaiting HR approval. Please wait.")
-        # login success
-        session['user_email'] = user.email
-        session['user_role'] = user.role
-        if user.role == 'HR':
-            return redirect(url_for('hr_dashboard'))
-        else:
-            return redirect(url_for('hod_dashboard'))
+            flash("HOD account pending HR approval", "warning")
+            return render_template('login.html')
+        session['user_id'] = user.id
+        session['email'] = user.email
+        session['role'] = user.role
+        session['name'] = user.name
+        if user.role == 'HR': return redirect(url_for('hr_dashboard'))
+        if user.role == 'HOD': return redirect(url_for('hod_dashboard'))
+        if user.role == 'UnitHead': return redirect(url_for('unit_dashboard'))
     return render_template('login.html')
 
 @app.route('/logout')
 def logout():
     session.clear()
+    flash("Logged out", "info")
     return redirect(url_for('login'))
 
-# ------------------ HOD dashboard ------------------
-@app.route('/hod', methods=['GET','POST'])
-def hod_dashboard():
-    if 'user_email' not in session or session.get('user_role') != 'HOD':
-        return redirect(url_for('login'))
+@app.route('/register', methods=['GET','POST'])
+def register():
     if request.method == 'POST':
-        candidate_name = request.form.get('candidate_name')
-        remarks = request.form.get('remarks','').strip()
-        update_success = False
-        if candidate_name:
-            update_success = update_hod_remarks(candidate_name, remarks, session.get('user_email'))
-        if update_success:
-            flash("Remarks saved.", "success")
-        else:
-            flash("Candidate not found.", "error")
-        return redirect(url_for('hod_dashboard'))
+        name = request.form.get('name','').strip()
+        email = request.form.get('email','').strip().lower()
+        password = request.form.get('password','').strip()
+        if User.query.filter_by(email=email).first():
+            flash("Email already registered", "warning")
+            return render_template('register.html')
+        user = User(name=name, email=email, role='HOD', is_active=False)
+        user.set_password(password)
+        db.session.add(user)
+        db.session.commit()
+        flash("Registered. Await HR approval.", "success")
+        return redirect(url_for('login'))
+    return render_template('register.html')
 
-    apps = Application.query.order_by(Application.date_submitted.desc()).all()
-    candidates = []
-    for a in apps:
-        candidates.append({
-            'name': a.name, 'position': a.position, 'phone': a.phone,
-            'remarks': a.hod_remarks or '', 'resume_filename': a.resume_filename or '',
-            'date': a.date_submitted.strftime('%Y-%m-%d')
-        })
-    return render_template('hod_dashboard.html', candidates=candidates, email=session.get('user_email'))
+# --- Candidate apply ---
+@app.route('/apply', methods=['GET','POST'])
+def apply():
+    if request.method == 'POST':
+        name = request.form.get('name','').strip()
+        address = request.form.get('address','').strip()
+        contact = re.sub(r'\D','', request.form.get('contact','').strip())
+        email = request.form.get('email','').strip().lower() or None
 
-def update_hod_remarks(candidate_name, remarks, hod_email):
-    a = Application.query.filter_by(name=candidate_name).first()
-    if not a:
-        return False
-    timestamped = f"{remarks} (by {hod_email} at {datetime.utcnow().strftime('%Y-%m-%d %H:%M')})"
-    a.hod_remarks = timestamped
-    db.session.commit()
-    send_email(HR_EMAIL, f"HOD Remarks added for {candidate_name}", f"<p>{timestamped}</p>")
-    return True
+        if not name or not address or not contact or len(contact) < 10:
+            flash("Name, address and valid 10-digit contact are required.", "danger")
+            return render_template('candidate_form.html')
 
-# ------------------ HR dashboard ------------------
-@app.route('/hr', methods=['GET','POST'])
+        # unique checks
+        if email and Application.query.filter_by(email=email).first():
+            flash("You already applied with this email. Try after some time.", "warning")
+            return render_template('candidate_form.html')
+        if Application.query.filter_by(contact=contact).first():
+            flash("You already applied with this contact number. Try after some time.", "warning")
+            return render_template('candidate_form.html')
+
+        academic = request.form.get('academic_json','[]')
+        professional = request.form.get('professional_json','[]')
+        family = request.form.get('family_json','[]')
+
+        resume = request.files.get('resume')
+        resume_filename = None
+        if resume:
+            fname = secure_filename(resume.filename)
+            if not allowed_file(fname):
+                flash("Resume must be pdf/doc/docx", "danger")
+                return render_template('candidate_form.html')
+            content = resume.read()
+            if len(content) > MAX_FILE_SIZE:
+                flash("Resume exceeds 5MB", "danger")
+                return render_template('candidate_form.html')
+            save_name = f"{datetime.utcnow().strftime('%Y%m%d%H%M%S')}_{fname}"
+            with open(os.path.join(UPLOAD_DIR, save_name),'wb') as fh:
+                fh.write(content)
+            resume_filename = save_name
+
+        new_app = Application(
+            name=name, address=address, contact=contact, email=email,
+            academic_json=academic, professional_json=professional, family_json=family,
+            position_applied=request.form.get('positionApplied'),
+            area_of_interest=request.form.get('areaOfInterest'),
+            current_salary=request.form.get('currentSalary'),
+            expected_salary=request.form.get('expectedSalary'),
+            notice_period=request.form.get('noticePeriod'),
+            resume_filename=resume_filename,
+            other_details=request.form.get('otherDetails'),
+            reference_type=request.form.get('referenceType'),
+            reference_name=request.form.get('referenceName')
+        )
+        db.session.add(new_app)
+        db.session.commit()
+
+        # ---------------- EMAILS: Candidate & HR ----------------
+        hr_user = User.query.filter_by(role='HR').first()
+        hr_email = hr_user.email if hr_user else None
+
+        # Send to candidate (if candidate provided email)
+        if email:
+            render_and_send(
+                "candidate_applied.html",
+                email,
+                "Accord Hospitals — Application Received",
+                name=name,
+                position=new_app.position_applied
+            )
+
+        # Send notification to HR
+        if hr_email:
+            render_and_send(
+                "candidate_applied.html",
+                hr_email,
+                "New Application Received — Accord Hospitals",
+                name=name,
+                position=new_app.position_applied
+            )
+
+        flash("Application submitted.", "success")
+        return render_template('submitted.html', name=name)
+
+    return render_template('candidate_form.html')
+
+# --- HR Dashboard ---
+@app.route('/hr')
+@login_required(role='HR')
 def hr_dashboard():
-    if 'user_email' not in session or session.get('user_role') != 'HR':
-        return redirect(url_for('login'))
+    apps = Application.query.order_by(Application.applied_at.desc()).all()
+    active_hods = User.query.filter_by(role='HOD', is_active=True).all()
+    pending_hods = User.query.filter_by(role='HOD', is_active=False).all()
 
-    # Handle HR actions: approve HOD or make decision on candidate
-    if request.method == 'POST':
-        # Approve HOD
-        if 'approve_hod_email' in request.form:
-            hod_email = request.form.get('approve_hod_email').strip().lower()
-            user = User.query.filter_by(email=hod_email, role='HOD').first()
-            if user:
-                user.is_active = True
-                db.session.commit()
-                send_email(hod_email, "HOD account approved", f"<p>Your HOD account ({hod_email}) has been approved by HR. You can now login.</p>")
-                flash(f"Approved HOD {hod_email}", "success")
-            else:
-                flash("HOD not found", "error")
-            return redirect(url_for('hr_dashboard'))
+    total = Application.query.count()
+    interviewed = Application.query.filter_by(status='Interviewed').count()
+    selected = Application.query.filter_by(status='Selected').count()
+    rejected = Application.query.filter_by(status='Rejected').count()
+    offered = Application.query.filter_by(status='Offered').count()
+    joined = Application.query.filter_by(status='Joined').count()
 
-        # HR decision on candidate
-        if 'candidate_name' in request.form:
-            candidate_name = request.form.get('candidate_name')
-            decision = request.form.get('decision')
-            if candidate_name and decision:
-                update_hr_decision(candidate_name, decision)
-            return redirect(url_for('hr_dashboard'))
+    return render_template('hr_dashboard.html',
+                           candidates=apps,
+                           active_hods=active_hods,
+                           pending_hods=pending_hods,
+                           total=total, interviewed=interviewed,
+                           selected=selected, rejected=rejected,
+                           offered=offered, joined=joined)
 
-    # Prepare lists
-    apps = Application.query.order_by(Application.date_submitted.desc()).all()
-    candidates = []
-    for a in apps:
-        candidates.append({
-            'name': a.name, 'position': a.position, 'phone': a.phone,
-            'remarks': a.hod_remarks or '', 'decision': a.hr_decision or 'Pending',
-            'resume_filename': a.resume_filename or '', 'email': a.email or '', 'date': a.date_submitted.strftime('%Y-%m-%d')
-        })
-
-    pending_hods = User.query.filter_by(role='HOD', is_active=False).order_by(User.created_at.desc()).all()
-
-    return render_template('hr_dashboard.html', candidates=candidates, pending_hods=pending_hods, email=session.get('user_email'))
-
-def update_hr_decision(candidate_name, decision):
-    a = Application.query.filter_by(name=candidate_name).first()
-    if not a:
-        return False
-    a.hr_decision = decision
+# HR actions
+@app.route('/hr/approve_hod/<int:hod_id>', methods=['POST'])
+@login_required(role='HR')
+def hr_approve_hod(hod_id):
+    hod = User.query.get(hod_id)
+    if not hod or hod.role != 'HOD':
+        flash("HOD not found", "danger")
+        return redirect(url_for('hr_dashboard'))
+    hod.is_active = True
     db.session.commit()
-    # notify candidate if email exists
-    if a.email:
-        if decision.lower() == 'approve':
-            subj = "Accord Hospitals — Selected"
-            body = f"<p>Dear {a.name},</p><p>Congratulations — you are selected. Please contact HR at {EMAIL_SENDER}.</p>"
-        elif decision.lower() == 'reject':
-            subj = "Accord Hospitals — Application Update"
-            body = f"<p>Dear {a.name},</p><p>We regret to inform you that you were not selected.</p>"
-        else:
-            subj = "Accord Hospitals — Application On Hold"
-            body = f"<p>Dear {a.name},</p><p>Your application is on hold. We will update you soon.</p>"
-        send_email(a.email, subj, body)
-    return True
+    flash("HOD approved", "success")
+    return redirect(url_for('hr_dashboard'))
 
-# ------------------ Reset HOD password (HR only) ------------------
-@app.route('/reset_password', methods=['POST'])
-def reset_password():
-    if 'user_email' not in session or session.get('user_role') != 'HR':
-        return redirect(url_for('login'))
+@app.route('/hr/reset_password', methods=['POST'])
+@login_required(role='HR')
+def hr_reset_password():
     email = request.form.get('email','').strip().lower()
-    new_password = request.form.get('new_password','').strip()
-    if not email or not new_password:
-        return "Email and new password required", 400
-    user = User.query.filter_by(email=email).first()
-    if not user:
-        return "User not found", 404
-    user.password_hash = generate_password_hash(new_password)
+    new_pw = request.form.get('new_password','').strip()
+    if not email or not new_pw:
+        flash("Provide email and new password", "danger")
+        return redirect(url_for('hr_dashboard'))
+    hod = User.query.filter_by(email=email, role='HOD').first()
+    if not hod:
+        flash("HOD not found", "danger")
+        return redirect(url_for('hr_dashboard'))
+    hod.set_password(new_pw)
     db.session.commit()
-    return "Password updated successfully"
+    # notify HOD
+    render_and_send("status_update.html", hod.email, "Your HOD account password has been reset",
+                    name=hod.name, status=f"Your password was reset. New password: {new_pw}")
+    flash("Password reset and email sent", "success")
+    return redirect(url_for('hr_dashboard'))
 
-# ------------------ Export to Excel ------------------
-@app.route('/export')
+@app.route('/hr/assign/<int:app_id>', methods=['POST'])
+@login_required(role='HR')
+def hr_assign(app_id):
+    hod_id = request.form.get('hod_id')
+    app_row = Application.query.get(app_id)
+    if not app_row:
+        flash("Application not found", "danger")
+        return redirect(url_for('hr_dashboard'))
+    if not hod_id:
+        flash("Select HOD", "warning")
+        return redirect(url_for('hr_dashboard'))
+    app_row.assigned_hod_id = int(hod_id)
+    app_row.status = 'Assigned'
+    db.session.commit()
+
+    hod = User.query.get(int(hod_id))
+    hr_user = User.query.filter_by(role='HR').first()
+    hr_email = hr_user.email if hr_user else None
+
+    # notify HOD (cc HR)
+    if hod:
+        render_and_send("hod_assignment.html", hod.email, "New Candidate Assigned",
+                        cc=hr_email, hod_name=hod.name, candidate=app_row)
+
+    flash("Assigned and HOD notified", "success")
+    return redirect(url_for('hr_dashboard'))
+
+# --- HOD Dashboard ---
+@app.route('/hod')
+@login_required(role='HOD')
+def hod_dashboard():
+    user_id = session.get('user_id')
+    apps = Application.query.filter_by(assigned_hod_id=user_id).order_by(Application.applied_at.desc()).all()
+    return render_template('hod_dashboard.html', candidates=apps)
+
+@app.route('/hod/result/<int:app_id>', methods=['POST'])
+@login_required(role='HOD')
+def hod_result(app_id):
+    status = request.form.get('status')
+    if status not in ('Interviewed', 'Rejected', 'Selected', 'OnHold'):
+        flash("Invalid status", "danger")
+        return redirect(url_for('hod_dashboard'))
+    app_row = Application.query.get(app_id)
+    if not app_row or app_row.assigned_hod_id != session.get('user_id'):
+        flash("Not assigned to you", "danger")
+        return redirect(url_for('hod_dashboard'))
+    app_row.status = status
+    db.session.commit()
+
+    # notify candidate + cc HR
+    hr_user = User.query.filter_by(role='HR').first()
+    hr_email = hr_user.email if hr_user else None
+    if app_row.email:
+        render_and_send("status_update.html", app_row.email, f"Application Status: {app_row.status}",
+                        cc=hr_email, name=app_row.name, status=app_row.status)
+
+    flash("Status updated and candidate notified", "success")
+    return redirect(url_for('hod_dashboard'))
+
+# Candidate view
+@app.route('/candidate/<int:app_id>')
+@login_required()
+def candidate_view(app_id):
+    a = Application.query.get(app_id)
+    if not a:
+        flash("Candidate not found", "danger")
+        return redirect(url_for('home'))
+    try:
+        academic = json.loads(a.academic_json or '[]')
+    except:
+        academic = []
+    try:
+        professional = json.loads(a.professional_json or '[]')
+    except:
+        professional = []
+    try:
+        family = json.loads(a.family_json or '[]')
+    except:
+        family = []
+    return render_template('candidate_view.html', a=a, academic=academic, professional=professional, family=family)
+
+# --- EXPORTS: Excel / ZIP / Filtered ---
+@app.route('/hr/export_excel')
+@login_required(role='HR')
 def export_excel():
-    apps = Application.query.order_by(Application.date_submitted.desc()).all()
+    apps = Application.query.order_by(Application.applied_at.asc()).all()
     wb = Workbook()
-    ws = wb.active
-    ws.title = "Applications"
-    ws.append([
-        "Name","Email","DOB","Phone","Current Address","Permanent Address",
-        "Position","Experience Summary","Notice Period","Last Salary","Expected Salary",
-        "Family Details","Experience Details","Resume Filename","HOD Remarks","HR Decision","Date Submitted"
+    ws_apps = wb.active
+    ws_apps.title = "Applications"
+    ws_apps.append([
+        "Application ID","Name","Address","Contact","Email",
+        "Position Applied","Area of Interest","Current Salary",
+        "Expected Salary","Notice Period","Status","Assigned HOD",
+        "Resume Filename","Reference Type","Reference Name","Other Details","Applied At"
     ])
-    for a in apps:
-        ws.append([
-            a.name, a.email, a.dob, a.phone, a.current_address, a.permanent_address,
-            a.position, a.experience_summary, a.notice_period, a.last_salary, a.expected_salary,
-            a.family_details_text, a.experience_details_text, a.resume_filename, a.hod_remarks, a.hr_decision,
-            a.date_submitted.strftime('%Y-%m-%d %H:%M')
-        ])
-    stream = io.BytesIO()
-    wb.save(stream)
-    stream.seek(0)
-    return send_file(stream, as_attachment=True, download_name="interview_data.xlsx", mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    ws_acad = wb.create_sheet("Academic")
+    ws_acad.append(["Application ID","Sr.No","Qualification","College/University","Year of Passing","Grade/Percentage"])
+    ws_prof = wb.create_sheet("Professional")
+    ws_prof.append(["Application ID","Sr.No","Name of Company","Designation","Work Tenure","Reason for leaving"])
+    ws_fam = wb.create_sheet("Family")
+    ws_fam.append(["Application ID","Sr.No","Name","Relation","Age","Occupation"])
 
-# ------------------ MAIN ------------------
+    for a in apps:
+        hod = User.query.filter_by(id=a.assigned_hod_id).first()
+        hod_name = hod.name if hod else ""
+        ws_apps.append([a.id, a.name, a.address, a.contact, a.email, a.position_applied, a.area_of_interest, a.current_salary, a.expected_salary, a.notice_period, a.status, hod_name, a.resume_filename, a.reference_type, a.reference_name, (a.other_details or ""), a.applied_at.strftime("%Y-%m-%d %H:%M")])
+        try:
+            acad_list = json.loads(a.academic_json or "[]")
+        except:
+            acad_list = []
+        if isinstance(acad_list, dict): acad_list = [acad_list]
+        for r in acad_list:
+            ws_acad.append([a.id, r.get("sr",""), r.get("qualification",""), r.get("college",""), r.get("year",""), r.get("grade","")])
+        try:
+            prof_list = json.loads(a.professional_json or "[]")
+        except:
+            prof_list = []
+        if isinstance(prof_list, dict): prof_list = [prof_list]
+        for r in prof_list:
+            ws_prof.append([a.id, r.get("sr",""), r.get("company",""), r.get("designation",""), r.get("tenure",""), r.get("reason","")])
+        try:
+            fam_list = json.loads(a.family_json or "[]")
+        except:
+            fam_list = []
+        if isinstance(fam_list, dict): fam_list = [fam_list]
+        for r in fam_list:
+            ws_fam.append([a.id, r.get("sr",""), r.get("name",""), r.get("relation",""), r.get("age",""), r.get("occupation","")])
+
+    out_path = os.path.join(BASE_DIR, "applications_export_structured.xlsx")
+    wb.save(out_path)
+    return send_file(out_path, as_attachment=True)
+
+@app.route('/hr/export_zip')
+@login_required(role='HR')
+def export_zip():
+    apps = Application.query.order_by(Application.applied_at.asc()).all()
+    wb = Workbook()
+    ws_apps = wb.active
+    ws_apps.title = "Applications"
+    ws_apps.append([
+        "Application ID","Name","Address","Contact","Email",
+        "Position Applied","Area of Interest","Current Salary",
+        "Expected Salary","Notice Period","Status","Assigned HOD",
+        "Resume Filename","Reference Type","Reference Name","Other Details","Applied At"
+    ])
+    ws_acad = wb.create_sheet("Academic")
+    ws_acad.append(["Application ID","Sr.No","Qualification","College/University","Year","Grade"])
+    ws_prof = wb.create_sheet("Professional")
+    ws_prof.append(["Application ID","Sr.No","Company","Designation","Tenure","Reason"])
+    ws_fam = wb.create_sheet("Family")
+    ws_fam.append(["Application ID","Sr.No","Name","Relation","Age","Occupation"])
+
+    for a in apps:
+        hod = User.query.filter_by(id=a.assigned_hod_id).first()
+        hod_name = hod.name if hod else ""
+        ws_apps.append([a.id, a.name, a.address, a.contact, a.email, a.position_applied, a.area_of_interest, a.current_salary, a.expected_salary, a.notice_period, a.status, hod_name, a.resume_filename, a.reference_type, a.reference_name, (a.other_details or ""), a.applied_at.strftime("%Y-%m-%d %H:%M")])
+        try:
+            acad_list = json.loads(a.academic_json or "[]")
+        except:
+            acad_list = []
+        if isinstance(acad_list, dict): acad_list = [acad_list]
+        for r in acad_list:
+            ws_acad.append([a.id, r.get("sr",""), r.get("qualification",""), r.get("college",""), r.get("year",""), r.get("grade","")])
+        try:
+            prof_list = json.loads(a.professional_json or "[]")
+        except:
+            prof_list = []
+        if isinstance(prof_list, dict): prof_list = [prof_list]
+        for r in prof_list:
+            ws_prof.append([a.id, r.get("sr",""), r.get("company",""), r.get("designation",""), r.get("tenure",""), r.get("reason","")])
+        try:
+            fam_list = json.loads(a.family_json or "[]")
+        except:
+            fam_list = []
+        if isinstance(fam_list, dict): fam_list = [fam_list]
+        for r in fam_list:
+            ws_fam.append([a.id, r.get("sr",""), r.get("name",""), r.get("relation",""), r.get("age",""), r.get("occupation","")])
+
+    excel_mem = io.BytesIO()
+    wb.save(excel_mem)
+    excel_mem.seek(0)
+
+    zip_mem = io.BytesIO()
+    with zipfile.ZipFile(zip_mem, "w", zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr("applications_export_structured.xlsx", excel_mem.read())
+        for a in apps:
+            if a.resume_filename:
+                path = os.path.join(UPLOAD_DIR, a.resume_filename)
+                if os.path.exists(path):
+                    zf.write(path, arcname=f"resumes/{a.resume_filename}")
+    zip_mem.seek(0)
+    return send_file(zip_mem, mimetype="application/zip", as_attachment=True, download_name="export_bundle.zip")
+
+@app.route('/hr/export_filtered')
+@login_required(role='HR')
+def export_filtered():
+    from_date_str = request.args.get('from_date', '').strip()
+    to_date_str = request.args.get('to_date', '').strip()
+    status = request.args.get('status', '').strip()
+
+    if not from_date_str or not to_date_str:
+        flash("Please select From and To dates.", "warning")
+        return redirect(url_for('hr_dashboard'))
+
+    try:
+        start_dt = datetime.strptime(from_date_str, "%Y-%m-%d")
+        end_dt = datetime.strptime(to_date_str, "%Y-%m-%d") + timedelta(days=1)
+    except Exception:
+        flash("Invalid date format.", "danger")
+        return redirect(url_for('hr_dashboard'))
+
+    q = Application.query.filter(Application.applied_at >= start_dt, Application.applied_at < end_dt)
+    if status:
+        q = q.filter_by(status=status)
+    apps = q.order_by(Application.applied_at.asc()).all()
+
+    wb = Workbook()
+    ws_apps = wb.active
+    ws_apps.title = "Applications"
+    ws_apps.append([
+        "Application ID","Name","Address","Contact","Email",
+        "Position Applied","Area of Interest","Current Salary",
+        "Expected Salary","Notice Period","Status","Assigned HOD",
+        "Resume Filename","Reference Type","Reference Name","Other Details","Applied At"
+    ])
+    ws_acad = wb.create_sheet("Academic")
+    ws_acad.append(["Application ID","Sr.No","Qualification","College/University","Year","Grade"])
+    ws_prof = wb.create_sheet("Professional")
+    ws_prof.append(["Application ID","Sr.No","Company","Designation","Tenure","Reason"])
+    ws_fam = wb.create_sheet("Family")
+    ws_fam.append(["Application ID","Sr.No","Name","Relation","Age","Occupation"])
+
+    for a in apps:
+        hod = User.query.filter_by(id=a.assigned_hod_id).first()
+        hod_name = hod.name if hod else ""
+        ws_apps.append([a.id, a.name, a.address, a.contact, a.email, a.position_applied, a.area_of_interest, a.current_salary, a.expected_salary, a.notice_period, a.status, hod_name, a.resume_filename, a.reference_type, a.reference_name, (a.other_details or ""), a.applied_at.strftime("%Y-%m-%d %H:%M")])
+        try: acad_list = json.loads(a.academic_json or "[]")
+        except: acad_list = []
+        if isinstance(acad_list, dict): acad_list = [acad_list]
+        for r in acad_list:
+            ws_acad.append([a.id, r.get("sr",""), r.get("qualification",""), r.get("college",""), r.get("year",""), r.get("grade","")])
+        try: prof_list = json.loads(a.professional_json or "[]")
+        except: prof_list = []
+        if isinstance(prof_list, dict): prof_list = [prof_list]
+        for r in prof_list:
+            ws_prof.append([a.id, r.get("sr",""), r.get("company",""), r.get("designation",""), r.get("tenure",""), r.get("reason","")])
+        try: fam_list = json.loads(a.family_json or "[]")
+        except: fam_list = []
+        if isinstance(fam_list, dict): fam_list = [fam_list]
+        for r in fam_list:
+            ws_fam.append([a.id, r.get("sr",""), r.get("name",""), r.get("relation",""), r.get("age",""), r.get("occupation","")])
+
+    out = io.BytesIO()
+    wb.save(out)
+    out.seek(0)
+    safe_status = f"_{status}" if status else ""
+    fname = f"applications_{from_date_str}_to_{to_date_str}{safe_status}.xlsx"
+    return send_file(out, as_attachment=True, download_name=fname, mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+
+# Test email
+@app.route('/test_email', methods=['GET','POST'])
+def test_email():
+    if request.method == 'POST':
+        to = request.form.get('to','').strip()
+        if not to:
+            flash("Please provide an email address", "warning")
+            return redirect(url_for('test_email'))
+        ok = send_email(to, "Test Email — Accord Interview System", "<h3>Test email from your app</h3><p>If you received this email, SMTP is configured correctly.</p>")
+        if ok:
+            flash(f"Test email sent to {to}", "success")
+        else:
+            flash("Test email failed — check logs and .env", "danger")
+        return redirect(url_for('test_email'))
+    return render_template('test_email.html')
+
+# Resume download
+@app.route('/uploads/<path:filename>')
+def download_file(filename):
+    return send_from_directory(UPLOAD_DIR, filename, as_attachment=True)
+
+# Run
 if __name__ == '__main__':
-    # create tables and default HR inside app context
-    with app.app_context():
-        create_tables_and_default_hr()
-    # run
-    app.run(host="0.0.0.0", port=int(os.environ.get("PORT",5000)))
+    app.run(debug=True, host='0.0.0.0', port=5001)

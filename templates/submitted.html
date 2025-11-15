@@ -1,15 +1,26 @@
-<!doctype html>
-<html>
-<head><meta charset="utf-8"><title>Submitted</title>
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <style>body{font-family:Inter,Arial;text-align:center;padding:60px;background:#f6f8fb} .card{display:inline-block;padding:30px;background:white;border-radius:12px;box-shadow:0 8px 30px rgba(2,6,23,0.06)}</style>
-</head>
-<body>
-  <div class="card">
-    <img src="{{ url_for('static', filename='logo.png') }}" alt="Logo" style="height:48px; display:block; margin:0 auto 8px;" onerror="this.style.display='none'">
-    <h2>Thank you, {{ name }}!</h2>
-    <p>Your application has been received. We will review it and contact you soon.</p>
-    <p><a href="/" style="color:#0b6efd">Submit another application</a></p>
-  </div>
-</body>
-</html>
+{% extends "base.html" %}
+{% block content %}
+
+<div class="row justify-content-center mt-5">
+    <div class="col-lg-7 col-md-9">
+
+        <div class="card shadow-lg p-5 text-center">
+
+            <div class="mb-4">
+                <img src="https://cdn-icons-png.flaticon.com/512/845/845646.png" width="90">
+            </div>
+
+            <h2 class="fw-bold text-success">Application Submitted!</h2>
+            <p class="text-secondary mt-3 mb-4">
+                Thank you <strong>{{ name }}</strong> for applying.<br>
+                Our HR team will review your application and contact you soon.
+            </p>
+
+            <a href="/" class="btn btn-primary w-50">Go Back to Home</a>
+
+        </div>
+
+    </div>
+</div>
+
+{% endblock %}

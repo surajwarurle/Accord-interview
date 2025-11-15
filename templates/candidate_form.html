@@ -1,195 +1,274 @@
-<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8" />
-  <title>Apply — Accord Hospitals</title>
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <style>
-    :root{
-      --accent:#0b6efd;
-      --muted:#6b7280;
-      --bg:#f6f8fb;
-      --card:#ffffff;
-      --radius:10px;
-      --max:1100px;
-    }
-    *{box-sizing:border-box}
-    body{font-family:Inter, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial; background:var(--bg); margin:0; color:#111827;}
-    .wrap{max-width:var(--max); margin:28px auto; padding:16px;}
-    header{display:flex; align-items:center; gap:16px; margin-bottom:14px;}
-    header img{height:56px; width:auto; object-fit:contain}
-    header h1{font-size:20px; margin:0;}
-    .card{background:var(--card); border-radius:var(--radius); padding:20px; box-shadow:0 6px 20px rgba(15,23,42,0.06);}
-    form.grid{display:grid; grid-template-columns:repeat(2,1fr); gap:14px;}
-    @media (max-width:820px){ form.grid{grid-template-columns:1fr} header{justify-content:center} }
-    label{display:block; font-size:13px; color:var(--muted); margin-bottom:6px;}
-    input[type="text"], input[type="email"], input[type="tel"], input[type="date"], textarea, select {
-      width:100%; padding:10px 12px; border-radius:8px; border:1px solid #e6e9ef; font-size:14px;
-    }
-    textarea{min-height:90px; resize:vertical}
-    .full{grid-column:1 / -1}
-    .small{width:100%}
-    .muted{color:var(--muted); font-size:13px;}
-    .section-title{margin-top:8px; margin-bottom:6px; font-weight:600; color:#111827;}
-    .row{display:flex; gap:10px}
-    .btn{background:var(--accent); color:white; padding:10px 16px; border-radius:8px; border:0; cursor:pointer; font-weight:600;}
-    .btn.secondary{background:#e6eefb; color:var(--accent)}
-    .file-wrapper{display:flex; gap:10px; align-items:center}
-    .file-name{font-size:13px; color:var(--muted)}
-    .hint{font-size:13px; color:var(--muted); margin-top:6px}
-  </style>
-</head>
-<body>
-  <div class="wrap">
-    <header>
-      <img src="{{ url_for('static', filename='logo.png') }}" alt="Logo" onerror="this.style.display='none'">
-      <div>
-        <h1>Accord Hospitals — Interview Application</h1>
-        <div class="muted">Fill the form below to apply. Fields marked * are required.</div>
-      </div>
-    </header>
+{% extends "base.html" %}
+{% block content %}
 
-    <div class="card">
-      <form class="grid" method="post" action="{{ url_for('submit_application') }}" enctype="multipart/form-data" id="candidateForm">
-        <div>
-          <label>Full Name *</label>
-          <input type="text" name="name" required placeholder="Ex: Rahul Sharma">
+<div class="row justify-content-center">
+    <div class="col-lg-10">
+
+        <div class="card shadow p-4">
+            <h3 class="text-center mb-4">Candidate Application Form</h3>
+
+            <form method="POST" enctype="multipart/form-data">
+
+                <!-- ================== BASIC DETAILS ================== -->
+                <h5 class="mb-3">Basic Information</h5>
+
+                <div class="row">
+                    <div class="col-md-6 mb-3">
+                        <label>Full Name</label>
+                        <input type="text" name="name" class="form-control" required>
+                    </div>
+
+                    <div class="col-md-6 mb-3">
+                        <label>Contact Number</label>
+                        <input type="text" name="contact" class="form-control" minlength="10" maxlength="10" required>
+                    </div>
+
+                    <div class="col-md-12 mb-3">
+                        <label>Email (Optional)</label>
+                        <input type="email" name="email" class="form-control">
+                    </div>
+
+                    <div class="col-md-12 mb-3">
+                        <label>Address</label>
+                        <textarea name="address" class="form-control" rows="2" required></textarea>
+                    </div>
+                </div>
+
+                <hr>
+
+                <!-- ================== JOB DETAILS ================== -->
+                <h5 class="mb-3">Job Details</h5>
+
+                <div class="row">
+                    <div class="col-md-6 mb-3">
+                        <label>Position Applied</label>
+                        <input type="text" name="positionApplied" class="form-control">
+                    </div>
+
+                    <div class="col-md-6 mb-3">
+                        <label>Area of Interest</label>
+                        <input type="text" name="areaOfInterest" class="form-control">
+                    </div>
+
+                    <div class="col-md-4 mb-3">
+                        <label>Current Salary</label>
+                        <input type="text" name="currentSalary" class="form-control">
+                    </div>
+
+                    <div class="col-md-4 mb-3">
+                        <label>Expected Salary</label>
+                        <input type="text" name="expectedSalary" class="form-control">
+                    </div>
+
+                    <div class="col-md-4 mb-3">
+                        <label>Notice Period</label>
+                        <input type="text" name="noticePeriod" class="form-control">
+                    </div>
+                </div>
+
+                <hr>
+
+                <!-- ================== ACADEMIC DETAILS ================== -->
+                <h5 class="mb-3">Academic Details</h5>
+
+                <input type="hidden" id="academic_json" name="academic_json">
+
+                <table class="table table-bordered" id="academic_table">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Sr</th>
+                            <th>Qualification</th>
+                            <th>College / University</th>
+                            <th>Year</th>
+                            <th>Grade</th>
+                            <th width="70">Action</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+
+                <button type="button" class="btn btn-secondary mb-3" onclick="addAcademic()">+ Add Academic Row</button>
+
+                <hr>
+
+                <!-- ================== PROFESSIONAL DETAILS ================== -->
+                <h5 class="mb-3">Professional Experience</h5>
+
+                <input type="hidden" id="professional_json" name="professional_json">
+
+                <table class="table table-bordered" id="professional_table">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Sr</th>
+                            <th>Company</th>
+                            <th>Designation</th>
+                            <th>Tenure</th>
+                            <th>Reason for Leaving</th>
+                            <th width="70">Action</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+
+                <button type="button" class="btn btn-secondary mb-3" onclick="addProfessional()">+ Add Experience Row</button>
+
+                <hr>
+
+                <!-- ================== FAMILY DETAILS ================== -->
+                <h5 class="mb-3">Family Details</h5>
+
+                <input type="hidden" id="family_json" name="family_json">
+
+                <table class="table table-bordered" id="family_table">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Sr</th>
+                            <th>Name</th>
+                            <th>Relation</th>
+                            <th>Age</th>
+                            <th>Occupation</th>
+                            <th width="70">Action</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+
+                <button type="button" class="btn btn-secondary mb-3" onclick="addFamily()">+ Add Family Row</button>
+
+                <hr>
+
+                <!-- ================== OTHER DETAILS ================== -->
+                <h5 class="mb-3">Reference & Other Details</h5>
+
+                <div class="row">
+                    <div class="col-md-4 mb-3">
+                        <label>Reference Type</label>
+                        <select name="referenceType" class="form-control">
+                            <option value="">Select</option>
+                            <option>Internal</option>
+                            <option>External</option>
+                        </select>
+                    </div>
+
+                    <div class="col-md-8 mb-3">
+                        <label>Reference Name</label>
+                        <input type="text" name="referenceName" class="form-control">
+                    </div>
+
+                    <div class="col-md-12 mb-3">
+                        <label>Other Details</label>
+                        <textarea name="otherDetails" class="form-control" rows="2"></textarea>
+                    </div>
+
+                    <div class="col-md-12 mb-3">
+                        <label>Upload Resume (PDF/DOC/DOCX)</label>
+                        <input type="file" name="resume" class="form-control">
+                    </div>
+                </div>
+
+                <button class="btn btn-primary w-100 mt-3">Submit Application</button>
+
+            </form>
+
         </div>
-
-        <div>
-          <label>Email *</label>
-          <input type="email" name="email" required placeholder="name@example.com">
-        </div>
-
-        <div>
-          <label>Phone (10 digits) *</label>
-          <input type="tel" name="phone" maxlength="10" pattern="\\d{10}" required placeholder="9876543210" id="phoneInput">
-        </div>
-
-        <div>
-          <label>Date of Birth</label>
-          <input type="date" name="dob">
-        </div>
-
-        <div class="full">
-          <label>Current Address</label>
-          <input type="text" name="current_address" placeholder="House / Street / City">
-        </div>
-
-        <div class="full">
-          <label>Permanent Address</label>
-          <input type="text" name="permanent_address" placeholder="House / Street / City">
-        </div>
-
-        <div>
-          <label>Position Applied For *</label>
-          <input type="text" name="position" required placeholder="Ex: Staff Nurse">
-        </div>
-
-        <div>
-          <label>Previous Experience (summary)</label>
-          <input type="text" name="experience" placeholder="e.g., 3 years in OPD">
-        </div>
-
-        <div>
-          <label>Notice Period</label>
-          <input type="text" name="notice_period" placeholder="e.g., 15 days">
-        </div>
-
-        <div>
-          <label>Last Drawn Salary</label>
-          <input type="text" name="last_salary" placeholder="e.g., 35000">
-        </div>
-
-        <div>
-          <label>Expected Salary</label>
-          <input type="text" name="expected_salary" placeholder="Preferred amount">
-        </div>
-
-        <div class="full">
-          <div class="section-title">Family Details (optional)</div>
-          <div class="muted">You can add up to 3 family members</div>
-
-          <table style="width:100%; margin-top:8px; border-collapse:collapse;">
-            <thead style="text-align:left; font-weight:600; color:var(--muted)"><tr>
-              <th style="padding:8px; border-bottom:1px solid #eee; width:6%">Sr</th>
-              <th style="padding:8px; border-bottom:1px solid #eee">Name</th>
-              <th style="padding:8px; border-bottom:1px solid #eee">Relationship</th>
-              <th style="padding:8px; border-bottom:1px solid #eee">Occupation</th>
-              <th style="padding:8px; border-bottom:1px solid #eee">Other</th>
-            </tr></thead>
-            <tbody>
-              {% for i in range(1,4) %}
-              <tr>
-                <td style="padding:6px">{{ i }}</td>
-                <td style="padding:6px"><input name="family_name_{{ i }}" type="text" placeholder="Name"></td>
-                <td style="padding:6px"><input name="relationship_{{ i }}" type="text" placeholder="Relation"></td>
-                <td style="padding:6px"><input name="occupation_{{ i }}" type="text" placeholder="Occupation"></td>
-                <td style="padding:6px"><input name="other_{{ i }}" type="text" placeholder="Any notes"></td>
-              </tr>
-              {% endfor %}
-            </tbody>
-          </table>
-        </div>
-
-        <div class="full">
-          <div class="section-title">Previous Experience (detailed — optional)</div>
-          <table style="width:100%; margin-top:8px; border-collapse:collapse;">
-            <thead style="text-align:left; font-weight:600; color:var(--muted)"><tr>
-              <th style="padding:8px; border-bottom:1px solid #eee; width:6%">Sr</th>
-              <th style="padding:8px; border-bottom:1px solid #eee">Organization</th>
-              <th style="padding:8px; border-bottom:1px solid #eee">Role</th>
-              <th style="padding:8px; border-bottom:1px solid #eee">Tenure</th>
-              <th style="padding:8px; border-bottom:1px solid #eee">Reason for leaving</th>
-            </tr></thead>
-            <tbody>
-              {% for i in range(1,4) %}
-              <tr>
-                <td style="padding:6px">{{ i }}</td>
-                <td style="padding:6px"><input name="org_{{ i }}" type="text"></td>
-                <td style="padding:6px"><input name="role_{{ i }}" type="text"></td>
-                <td style="padding:6px"><input name="tenure_{{ i }}" type="text"></td>
-                <td style="padding:6px"><input name="reason_{{ i }}" type="text"></td>
-              </tr>
-              {% endfor %}
-            </tbody>
-          </table>
-        </div>
-
-        <div class="full">
-          <label>Upload Resume *</label>
-          <div class="file-wrapper">
-            <input id="resume" type="file" name="resume" accept=".pdf,.doc,.docx" required>
-            <div class="file-name" id="fileName">No file chosen</div>
-          </div>
-          <div class="hint">Accepted: .pdf, .doc, .docx — Max 5 MB</div>
-        </div>
-
-        <div class="full" style="display:flex; justify-content:flex-end; gap:10px;">
-          <button type="reset" class="btn secondary">Reset</button>
-          <button type="submit" class="btn">Submit Application</button>
-        </div>
-      </form>
     </div>
-  </div>
+</div>
 
-  <script>
-    // show selected filename
-    const resume = document.getElementById('resume');
-    const fileName = document.getElementById('fileName');
-    if(resume){
-      resume.addEventListener('change', e=>{
-        if(resume.files.length) fileName.textContent = resume.files[0].name;
-        else fileName.textContent = 'No file chosen';
-      });
+<!-- ================== DYNAMIC TABLE SCRIPTS ================== -->
+<script>
+    function addAcademic() {
+        let table = document.querySelector("#academic_table tbody");
+        let row = document.createElement("tr");
+
+        row.innerHTML = `
+            <td></td>
+            <td><input class="form-control" /></td>
+            <td><input class="form-control" /></td>
+            <td><input class="form-control" /></td>
+            <td><input class="form-control" /></td>
+            <td><button type="button" class="btn btn-danger btn-sm" onclick="removeRow(this)">X</button></td>
+        `;
+
+        table.appendChild(row);
+        updateSr();
     }
-    // basic phone client check
-    const phoneInput = document.getElementById('phoneInput');
-    if(phoneInput){
-      phoneInput.addEventListener('input', ()=> {
-        phoneInput.value = phoneInput.value.replace(/\D/g,'').slice(0,10);
-      });
+
+    function addProfessional() {
+        let table = document.querySelector("#professional_table tbody");
+        let row = document.createElement("tr");
+
+        row.innerHTML = `
+            <td></td>
+            <td><input class="form-control" /></td>
+            <td><input class="form-control" /></td>
+            <td><input class="form-control" /></td>
+            <td><input class="form-control" /></td>
+            <td><button type="button" class="btn btn-danger btn-sm" onclick="removeRow(this)">X</button></td>
+        `;
+
+        table.appendChild(row);
+        updateSr();
     }
-  </script>
-</body>
-</html>
+
+    function addFamily() {
+        let table = document.querySelector("#family_table tbody");
+        let row = document.createElement("tr");
+
+        row.innerHTML = `
+            <td></td>
+            <td><input class="form-control" /></td>
+            <td><input class="form-control" /></td>
+            <td><input class="form-control" /></td>
+            <td><input class="form-control" /></td>
+            <td><button type="button" class="btn btn-danger btn-sm" onclick="removeRow(this)">X</button></td>
+        `;
+
+        table.appendChild(row);
+        updateSr();
+    }
+
+    function removeRow(btn) {
+        btn.parentElement.parentElement.remove();
+        updateSr();
+    }
+
+    function updateSr() {
+        document.querySelectorAll("#academic_table tbody tr").forEach((r, i) => r.children[0].innerText = i + 1);
+        document.querySelectorAll("#professional_table tbody tr").forEach((r, i) => r.children[0].innerText = i + 1);
+        document.querySelectorAll("#family_table tbody tr").forEach((r, i) => r.children[0].innerText = i + 1);
+    }
+
+    document.querySelector("form").addEventListener("submit", function () {
+        document.getElementById("academic_json").value = JSON.stringify(
+            [...document.querySelectorAll("#academic_table tbody tr")].map(r => ({
+                sr: r.children[0].innerText,
+                qualification: r.children[1].children[0].value,
+                college: r.children[2].children[0].value,
+                year: r.children[3].children[0].value,
+                grade: r.children[4].children[0].value,
+            }))
+        );
+
+        document.getElementById("professional_json").value = JSON.stringify(
+            [...document.querySelectorAll("#professional_table tbody tr")].map(r => ({
+                sr: r.children[0].innerText,
+                company: r.children[1].children[0].value,
+                designation: r.children[2].children[0].value,
+                tenure: r.children[3].children[0].value,
+                reason: r.children[4].children[0].value,
+            }))
+        );
+
+        document.getElementById("family_json").value = JSON.stringify(
+            [...document.querySelectorAll("#family_table tbody tr")].map(r => ({
+                sr: r.children[0].innerText,
+                name: r.children[1].children[0].value,
+                relation: r.children[2].children[0].value,
+                age: r.children[3].children[0].value,
+                occupation: r.children[4].children[0].value,
+            }))
+        );
+    });
+</script>
+
+{% endblock %}

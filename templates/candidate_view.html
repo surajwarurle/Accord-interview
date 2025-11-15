@@ -1,0 +1,165 @@
+{% extends "base.html" %}
+{% block content %}
+
+<h2 class="mb-4 text-primary">Candidate Details</h2>
+
+<div class="card shadow-sm p-4 mb-4">
+    <h4 class="text-secondary">Basic Information</h4>
+    <hr>
+    <p><strong>Name:</strong> {{ a.name }}</p>
+    <p><strong>Address:</strong> {{ a.address }}</p>
+    <p><strong>Contact:</strong> {{ a.contact }}</p>
+    <p><strong>Email:</strong> {{ a.email }}</p>
+    <p><strong>Position Applied:</strong> {{ a.position_applied }}</p>
+    <p><strong>Area of Interest:</strong> {{ a.area_of_interest }}</p>
+    <p><strong>Status:</strong> <span class="badge bg-info">{{ a.status }}</span></p>
+
+    {% if a.resume_filename %}
+        <p>
+            <strong>Resume:</strong>
+            <a href="/uploads/{{ a.resume_filename }}" target="_blank" class="btn btn-sm btn-primary">
+                View Resume
+            </a>
+        </p>
+    {% endif %}
+</div>
+
+<!-- ==================== TIMELINE ==================== -->
+<div class="card shadow-sm p-4 mb-4">
+    <h4 class="text-secondary">Application Timeline</h4>
+    <hr>
+
+    <ul class="list-group">
+
+        <li class="list-group-item">
+            <strong>Applied On:</strong> {{ a.applied_at.strftime("%d-%m-%Y %I:%M %p") }}
+        </li>
+
+        {% if a.assigned_hod_id %}
+        <li class="list-group-item">
+            <strong>Assigned to HOD:</strong>
+            {{ a.assigned_hod_id }}
+        </li>
+        {% endif %}
+
+        {% if a.status == "Interviewed" %}
+        <li class="list-group-item">
+            <strong>Status Updated:</strong> Interviewed
+        </li>
+        {% elif a.status == "Selected" %}
+        <li class="list-group-item">
+            <strong>Status Updated:</strong> Selected
+        </li>
+        {% elif a.status == "Rejected" %}
+        <li class="list-group-item">
+            <strong>Status Updated:</strong> Rejected
+        </li>
+        {% elif a.status == "OnHold" %}
+        <li class="list-group-item">
+            <strong>Status Updated:</strong> On Hold
+        </li>
+        {% endif %}
+
+    </ul>
+</div>
+
+<!-- ==================== ACADEMIC DETAILS ==================== -->
+<div class="card shadow-sm p-4 mb-4">
+    <h4 class="text-secondary">Academic Details</h4>
+    <hr>
+
+    {% if academic %}
+    <table class="table table-bordered">
+        <thead class="table-light">
+            <tr>
+                <th>Sr.</th>
+                <th>Qualification</th>
+                <th>College / University</th>
+                <th>Year</th>
+                <th>Grade</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for row in academic %}
+            <tr>
+                <td>{{ row.sr }}</td>
+                <td>{{ row.qualification }}</td>
+                <td>{{ row.college }}</td>
+                <td>{{ row.year }}</td>
+                <td>{{ row.grade }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+        <p class="text-muted">No academic details available.</p>
+    {% endif %}
+</div>
+
+<!-- ==================== PROFESSIONAL DETAILS ==================== -->
+<div class="card shadow-sm p-4 mb-4">
+    <h4 class="text-secondary">Professional Experience</h4>
+    <hr>
+
+    {% if professional %}
+    <table class="table table-bordered">
+        <thead class="table-light">
+            <tr>
+                <th>Sr.</th>
+                <th>Company</th>
+                <th>Designation</th>
+                <th>Tenure</th>
+                <th>Reason for Leaving</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for row in professional %}
+            <tr>
+                <td>{{ row.sr }}</td>
+                <td>{{ row.company }}</td>
+                <td>{{ row.designation }}</td>
+                <td>{{ row.tenure }}</td>
+                <td>{{ row.reason }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+        <p class="text-muted">No professional details available.</p>
+    {% endif %}
+</div>
+
+<!-- ==================== FAMILY DETAILS ==================== -->
+<div class="card shadow-sm p-4 mb-4">
+    <h4 class="text-secondary">Family Details</h4>
+    <hr>
+
+    {% if family %}
+    <table class="table table-bordered">
+        <thead class="table-light">
+            <tr>
+                <th>Sr.</th>
+                <th>Name</th>
+                <th>Relation</th>
+                <th>Age</th>
+                <th>Occupation</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for row in family %}
+            <tr>
+                <td>{{ row.sr }}</td>
+                <td>{{ row.name }}</td>
+                <td>{{ row.relation }}</td>
+                <td>{{ row.age }}</td>
+                <td>{{ row.occupation }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+        <p class="text-muted">No family details available.</p>
+    {% endif %}
+</div>
+
+{% endblock %}

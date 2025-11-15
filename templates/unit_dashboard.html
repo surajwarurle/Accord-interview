@@ -1,0 +1,130 @@
+{% extends "base.html" %}
+{% block title %}Unit Head Dashboard{% endblock %}
+
+{% block content %}
+<style>
+    .stats-card {
+        background: white;
+        padding: 20px;
+        border-radius: 12px;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.06);
+        text-align: center;
+        transition: 0.2s;
+    }
+    .stats-card:hover {
+        transform: translateY(-3px);
+        box-shadow: 0 6px 18px rgba(0,0,0,0.1);
+    }
+    .stats-number {
+        font-size: 28px;
+        font-weight: 700;
+        color: #1e3a8a;
+    }
+    .stats-label {
+        font-size: 14px;
+        color: #64748b;
+    }
+    .section-title {
+        margin-top: 40px;
+        margin-bottom: 10px;
+        font-size: 22px;
+        font-weight: 600;
+        color: #1e293b;
+    }
+</style>
+
+<div class="container mt-4">
+    <h2 class="mb-4">📊 Unit Head Dashboard</h2>
+
+    <!-- Top Stats Cards -->
+    <div class="row g-4">
+        <div class="col-md-3 col-sm-6">
+            <div class="stats-card">
+                <div class="stats-number">{{ total }}</div>
+                <div class="stats-label">Total Applications</div>
+            </div>
+        </div>
+
+        <div class="col-md-3 col-sm-6">
+            <div class="stats-card">
+                <div class="stats-number">{{ applied }}</div>
+                <div class="stats-label">New Applied</div>
+            </div>
+        </div>
+
+        <div class="col-md-3 col-sm-6">
+            <div class="stats-card">
+                <div class="stats-number">{{ interviewed }}</div>
+                <div class="stats-label">Interviewed</div>
+            </div>
+        </div>
+
+        <div class="col-md-3 col-sm-6">
+            <div class="stats-card">
+                <div class="stats-number">{{ selected }}</div>
+                <div class="stats-label">Selected</div>
+            </div>
+        </div>
+
+        <div class="col-md-3 col-sm-6 mt-3">
+            <div class="stats-card">
+                <div class="stats-number">{{ rejected }}</div>
+                <div class="stats-label">Rejected</div>
+            </div>
+        </div>
+
+        <div class="col-md-3 col-sm-6 mt-3">
+            <div class="stats-card">
+                <div class="stats-number">{{ onhold }}</div>
+                <div class="stats-label">On Hold</div>
+            </div>
+        </div>
+
+        <div class="col-md-3 col-sm-6 mt-3">
+            <div class="stats-card">
+                <div class="stats-number">{{ joined }}</div>
+                <div class="stats-label">Joined</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Department Chart -->
+    <h3 class="section-title">📌 Department Wise Applications</h3>
+
+    <div class="card p-4">
+        <canvas id="deptChart" style="height: 400px;"></canvas>
+    </div>
+</div>
+
+<!-- Chart.js -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+<script>
+    const deptLabels = {{ dept_labels | safe }};
+    const deptValues = {{ dept_values | safe }};
+
+    const ctx = document.getElementById('deptChart').getContext('2d');
+
+    new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: deptLabels,
+            datasets: [{
+                label: 'Applications',
+                data: deptValues,
+                backgroundColor: 'rgba(37, 99, 235, 0.6)',
+                borderColor: 'rgba(37, 99, 235, 1)',
+                borderWidth: 2,
+                borderRadius: 6,
+            }]
+        },
+        options: {
+            responsive: true,
+            scales: {
+                y: { beginAtZero: true }
+            }
+        }
+    });
+</script>
+
+{% endblock %}

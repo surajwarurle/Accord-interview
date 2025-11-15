@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test Email</title>
+    <style>
+        body { font-family: Arial; background:#f7f7f7; padding:20px; }
+        .box {
+            max-width: 500px;
+            background:white;
+            margin:auto;
+            padding:20px;
+            border-radius:10px;
+            box-shadow:0 4px 10px rgba(0,0,0,0.1);
+        }
+        input {
+            width:100%;
+            padding:10px;
+            margin:10px 0;
+            border:1px solid #ddd;
+            border-radius:6px;
+        }
+        button {
+            background:#0b6efd;
+            color:white;
+            padding:10px 15px;
+            border:none;
+            border-radius:6px;
+            cursor:pointer;
+            width:100%;
+        }
+        button:hover { background:#0a58ca; }
+    </style>
+</head>
+<body>
+
+<div class="box">
+    <h2>Send Test Email</h2>
+
+    <form method="POST">
+        <label>Enter Email Address:</label>
+        <input type="email" name="to" placeholder="example@gmail.com" required>
+
+        <button type="submit">Send Test Email</button>
+    </form>
+
+    <p style="margin-top:20px; font-size:14px; color:#666;">
+        Use this to confirm Gmail SMTP is working.
+    </p>
+</div>
+
+</body>
+</html>

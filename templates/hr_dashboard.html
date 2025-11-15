@@ -1,60 +1,249 @@
-<!doctype html>
-<html>
-<head><meta charset="utf-8"><title>HR Dashboard</title>
-<meta name="viewport" content="width=device-width,initial-scale=1" />
-<style>body{font-family:Inter,Arial;background:#f6f8fb;padding:20px} .top{display:flex;justify-content:space-between;align-items:center;max-width:1100px;margin:6px auto} .card{background:white;padding:12px;border-radius:10px;box-shadow:0 6px 18px rgba(2,6,23,0.06); max-width:1100px;margin:auto} table{width:100%;border-collapse:collapse} th,td{padding:10px;border-bottom:1px solid #eee;text-align:left} th{background:#fafafa} .btn{background:#0b6efd;color:white;padding:8px 10px;border-radius:6px;border:0;cursor:pointer} .small-btn{background:#06b6d4;color:white;padding:6px 8px;border-radius:6px;border:0} .muted{color:#6b7280}</style>
-</head>
-<body>
-  <div class="top">
-    <h2 style="margin:0">HR Dashboard — {{ email }}</h2>
-    <div><a href="/logout" style="color:#6b7280">Logout</a></div>
-  </div>
+{% extends "base.html" %}
+{% block title %}HR Dashboard{% endblock %}
 
-  <div class="card" style="margin-top:10px;">
-    <h3 style="margin-top:0">Candidate List</h3>
-    <table>
-      <thead>
-        <tr><th>Name</th><th>Position</th><th>Phone</th><th>Resume</th><th>HOD Remarks</th><th>HR Decision</th><th>Action</th></tr>
-      </thead>
-      <tbody>
-        {% for c in candidates %}
-        <tr>
-          <td>{{ c.name }}</td>
-          <td>{{ c.position }}</td>
-          <td>{{ c.phone }}</td>
-          <td>
-            {% if c.resume_filename %}
-              <a href="{{ url_for('static', filename='uploads/'~c.resume_filename) }}" target="_blank" class="small-btn">View</a>
-            {% else %}No resume{% endif %}
-          </td>
-          <td>{{ c.remarks }}</td>
-          <td>{{ c.decision }}</td>
-          <td>
-            <form method="POST" style="display:flex; gap:8px; align-items:center;">
-              <input type="hidden" name="candidate_name" value="{{ c.name }}">
-              <select name="decision" required style="padding:8px;border-radius:6px;border:1px solid #e6e9ef">
-                <option value="">Select</option>
-                <option value="Approve">Approve</option>
-                <option value="Hold">Hold</option>
-                <option value="Reject">Reject</option>
-              </select>
-              <button type="submit" class="btn">Update</button>
-            </form>
-          </td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
+{% block content %}
+<div class="container mt-4">
 
-    <hr style="margin:18px 0;">
-    <h4>Reset HOD Password</h4>
-    <form method="POST" action="/reset_password" style="display:flex;gap:8px;align-items:center">
-      <input type="email" name="email" placeholder="HOD Email" required style="padding:8px;border-radius:6px;border:1px solid #e6e9ef">
-      <input type="password" name="new_password" placeholder="New Password" required style="padding:8px;border-radius:6px;border:1px solid #e6e9ef">
-      <button type="submit" class="btn">Reset</button>
-    </form>
+    <h2 class="mb-3 text-primary">HR Dashboard</h2>
 
-    <p style="margin-top:12px;"><a href="/export" style="color:#0b6efd">Export to Excel</a></p>
-  </div>
-</body>
-</html>
+    <!-- ---------- Summary Cards ---------- -->
+    <div class="row text-center">
+
+        <div class="col-md-2 mb-3">
+            <div class="card shadow-sm p-3 border-primary">
+                <h6>Applied</h6>
+                <h3 class="text-primary">{{ applied }}</h3>
+            </div>
+        </div>
+
+        <div class="col-md-2 mb-3">
+            <div class="card shadow-sm p-3 border-info">
+                <h6>Interviewed</h6>
+                <h3 class="text-info">{{ interviewed }}</h3>
+            </div>
+        </div>
+
+        <div class="col-md-2 mb-3">
+            <div class="card shadow-sm p-3 border-success">
+                <h6>Selected</h6>
+                <h3 class="text-success">{{ selected }}</h3>
+            </div>
+        </div>
+
+        <div class="col-md-2 mb-3">
+            <div class="card shadow-sm p-3 border-danger">
+                <h6>Rejected</h6>
+                <h3 class="text-danger">{{ rejected }}</h3>
+            </div>
+        </div>
+
+        <div class="col-md-2 mb-3">
+            <div class="card shadow-sm p-3 border-warning">
+                <h6>On Hold</h6>
+                <h3 class="text-warning">{{ onhold }}</h3>
+            </div>
+        </div>
+
+        <div class="col-md-2 mb-3">
+            <div class="card shadow-sm p-3 border-dark">
+                <h6>Offered</h6>
+                <h3 class="text-dark">{{ offered }}</h3>
+            </div>
+        </div>
+
+    </div>
+
+    <hr>
+
+    <!-- ---------- Charts Section ---------- -->
+    <div class="row">
+        <div class="col-md-6">
+            <div class="card p-3 shadow-sm">
+                <h5 class="text-primary text-center">Department-wise Status (Bar Chart)</h5>
+                <canvas id="deptBarChart" height="200"></canvas>
+            </div>
+        </div>
+
+        <div class="col-md-6">
+            <div class="card p-3 shadow-sm">
+                <h5 class="text-primary text-center">Overall Status (Pie Chart)</h5>
+                <canvas id="statusPieChart" height="200"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <hr>
+
+    <!-- ---------- Pending HOD Approvals ---------- -->
+    {% if pending_hods %}
+    <div class="card p-3 shadow-sm border-danger mb-4">
+        <h5 class="text-danger">Pending HOD Approvals</h5>
+        <ul class="list-group">
+            {% for h in pending_hods %}
+            <li class="list-group-item d-flex justify-content-between">
+                <span>{{ h.name }} — {{ h.email }}</span>
+                <form method="POST" action="/hr/approve_hod/{{ h.id }}">
+                    <button class="btn btn-success btn-sm">Approve</button>
+                </form>
+            </li>
+            {% endfor %}
+        </ul>
+    </div>
+    {% endif %}
+
+    <!-- ---------- Export Section ---------- -->
+    <div class="mb-4">
+        <h4>Export Data</h4>
+        <a href="/hr/export_excel" class="btn btn-success btn-sm">Download Excel</a>
+        <a href="/hr/export_zip" class="btn btn-primary btn-sm">Download ZIP (Excel + Resumes)</a>
+    </div>
+
+    <!-- ---------- Filter Export ---------- -->
+    <div class="card p-3 mb-4">
+        <h5>Export Filtered</h5>
+        <form method="GET" action="/hr/export_filtered" class="row g-3">
+            <div class="col-md-3">
+                <label>From Date</label>
+                <input type="date" name="from_date" class="form-control">
+            </div>
+            <div class="col-md-3">
+                <label>To Date</label>
+                <input type="date" name="to_date" class="form-control">
+            </div>
+            <div class="col-md-3">
+                <label>Status</label>
+                <select name="status" class="form-control">
+                    <option value="">All</option>
+                    <option>Applied</option>
+                    <option>Assigned</option>
+                    <option>Interviewed</option>
+                    <option>Selected</option>
+                    <option>Rejected</option>
+                    <option>OnHold</option>
+                    <option>Offered</option>
+                </select>
+            </div>
+            <div class="col-md-3">
+                <label>&nbsp;</label>
+                <button class="btn btn-dark w-100">Export</button>
+            </div>
+        </form>
+    </div>
+
+    <!-- ---------- HOD Reset Password ---------- -->
+    <div class="card p-3 shadow-sm border-warning mb-4">
+        <h5>Reset HOD Password</h5>
+        <form method="POST" action="/hr/reset_password" class="row g-3">
+            <div class="col-md-4">
+                <input type="email" name="email" placeholder="HOD Email" class="form-control" required>
+            </div>
+            <div class="col-md-4">
+                <input type="text" name="new_password" placeholder="New Password" class="form-control" required>
+            </div>
+            <div class="col-md-4">
+                <button class="btn btn-warning w-100">Reset</button>
+            </div>
+        </form>
+    </div>
+
+    <hr>
+
+    <!-- ---------- Candidate Table ---------- -->
+    <h4 class="mt-4 mb-3">All Candidates</h4>
+
+    <div class="table-responsive">
+        <table class="table table-bordered table-striped">
+            <thead class="table-dark">
+                <tr>
+                    <th>ID</th>
+                    <th>Name</th>
+                    <th>Department</th>
+                    <th>Position</th>
+                    <th>Status</th>
+                    <th>Applied At</th>
+                    <th>Assign HOD</th>
+                    <th>View</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for c in candidates %}
+                <tr>
+                    <td>{{ c.id }}</td>
+                    <td>{{ c.name }}</td>
+                    <td>{{ c.department or '—' }}</td>
+                    <td>{{ c.position_applied }}</td>
+                    <td>{{ c.status }}</td>
+                    <td>{{ c.applied_at.strftime("%Y-%m-%d") }}</td>
+
+                    <td>
+                        <form method="POST" action="/hr/assign/{{ c.id }}" class="d-flex">
+                            <select name="hod_id" class="form-select form-select-sm me-2">
+                                <option value="">Select</option>
+                                {% for h in active_hods %}
+                                <option value="{{ h.id }}">{{ h.name }}</option>
+                                {% endfor %}
+                            </select>
+                            <button class="btn btn-sm btn-primary">Assign</button>
+                        </form>
+                    </td>
+
+                    <td>
+                        <a href="/candidate/{{ c.id }}" class="btn btn-info btn-sm">View</a>
+                    </td>
+
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+</div>
+
+<!-- Chart.js -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+<script>
+fetch("/api/hr/department_stats")
+    .then(res => res.json())
+    .then(data => {
+
+        // BAR CHART
+        new Chart(document.getElementById("deptBarChart"), {
+            type: "bar",
+            data: {
+                labels: data.departments,
+                datasets: [
+                    { label: "Applied", data: data.applied, backgroundColor: "#0d6efd" },
+                    { label: "Interviewed", data: data.interviewed, backgroundColor: "#0dcaf0" },
+                    { label: "Selected", data: data.selected, backgroundColor: "#198754" },
+                    { label: "Rejected", data: data.rejected, backgroundColor: "#dc3545" },
+                ]
+            }
+        });
+
+        // PIE CHART
+        new Chart(document.getElementById("statusPieChart"), {
+            type: "pie",
+            data: {
+                labels: ["Applied", "Interviewed", "Selected", "Rejected", "OnHold", "Offered"],
+                datasets: [{
+                    data: [
+                        {{ applied }},
+                        {{ interviewed }},
+                        {{ selected }},
+                        {{ rejected }},
+                        {{ onhold }},
+                        {{ offered }},
+                    ],
+                    backgroundColor: [
+                        "#0d6efd", "#0dcaf0", "#198754",
+                        "#dc3545", "#ffc107", "#6c757d"
+                    ]
+                }]
+            }
+        });
+
+    });
+</script>
+
+{% endblock %}

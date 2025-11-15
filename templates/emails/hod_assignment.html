@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html>
+<body style="font-family: Arial; background:#f7f7f7; padding:20px;">
+    <div style="max-width:600px; margin:auto; background:white; padding:20px; border-radius:10px;">
+        <h2 style="color:#10b981;">New Candidate Assigned</h2>
+
+        <p>Dear {{ hod.name }},</p>
+
+        <p>A new candidate has been assigned to you:</p>
+
+        <ul>
+            <li><b>Name:</b> {{ app.name }}</li>
+            <li><b>Position:</b> {{ app.position_applied }}</li>
+            <li><b>Applied On:</b> {{ app.applied_at.strftime("%Y-%m-%d %H:%M") }}</li>
+        </ul>
+
+        <p>Please login to the HOD dashboard to review the full application.</p>
+
+        <br>
+        <p>Regards,<br><b>Accord HR Team</b></p>
+    </div>
+</body>
+</html>
